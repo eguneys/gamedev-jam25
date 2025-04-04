@@ -191,10 +191,10 @@ app(document.getElementById('app')!)
 type Position = {
   w: number,
   h: number,
-  x: number
-  y: number
   prev_x?: number
   prev_y?: number
+  i_x: number
+  i_y: number
   rem_x: number
   rem_y: number
   dx: number
@@ -207,6 +207,28 @@ type Position = {
   facing: number
 }
 
+function pos_xy(p: Position) {
+  return [p.i_x + p.rem_x, p.i_y, + p.rem_y]
+}
+
+function position(x: number, y: number, w: number, h: number): Position {
+  return {
+    w,
+    h,
+    rem_x: 0,
+    rem_y: 0,
+    i_x: x,
+    i_y: y,
+    dx: 0,
+    dy: 0,
+    ddx: 0,
+    ddy: 0,
+    dy_pull: 0,
+    is_grounded: false,
+    facing: 0,
+  }
+}
+
 type Player = Position & {
   ix: number
   iy: number
@@ -217,6 +239,15 @@ type Player = Position & {
   ahead_x: number
 }
 
+function player(x: number, y: number) {
+  return { ...position(x, y, 16, 16), 
+    ix: 0, iy: 0, 
+    jx: 0, jl: 0, 
+    jboost: 0,
+    ahead_x: 0
+  }
+}
+
 const p_max_dx = 100
 
 type HasCollidedXYWH = (x: number, y: number, w: number, h: number) => boolean
@@ -225,7 +256,7 @@ type Camera = { x: number, y: number }
 
 function Play(cc: Canvas, ii: Input) {
 
-  let player: Player = { ahead_x: 0, jboost: 0, jl: 2, dy_pull: 0, is_grounded: false, w: 16, h: 16, rem_x: 0, rem_y: 0, x: 50, y: 100, dx: 0, dy: 0, ddx: 0, ddy: 0, ix: 0, iy: 0, facing: 0, jx: 0 }
+  let p0 = player(0, 0)
 
   let grid = levels()
 
@@ -235,9 +266,9 @@ function Play(cc: Canvas, ii: Input) {
 
   function _update(delta: number) {
 
-    update_player(ii, player, delta, has_collided_player)
+    update_player(ii, p0, delta, has_collided_player)
 
-    update_camera(cc.camera, player, delta)
+    update_camera(cc.camera, p0, delta)
 
     ii.update()
   }
@@ -252,7 +283,7 @@ function Play(cc: Canvas, ii: Input) {
 
     render_grid(cc, grid)
 
-    render_player(player, alpha, cc)
+    render_player(p0, alpha, cc)
   }
 
 
@@ -277,18 +308,20 @@ function update_camera(camera: Camera, player: Player, delta: number) {
     player.ahead_x = appr(player.ahead_x, 0, delta)
   }
 
-  if (player.x - dead_x + player.ahead_x > camera.x) {
-    camera.x = interpolate(player.x - dead_x + player.ahead_x, camera.x, 0.1)
-  } else if (player.x + dead_x + player.ahead_x < camera.x) {
-    camera.x = interpolate(player.x + dead_x + player.ahead_x, camera.x, 0.1)
+  let [player_x, player_y] = pos_xy(player)
+
+  if (player_x - dead_x + player.ahead_x >= camera.x - 0.5) {
+    camera.x = interpolate(player_x - dead_x + player.ahead_x, camera.x, 0.1)
+  } else if (player_x + dead_x + player.ahead_x <= camera.x - 0.5) {
+    camera.x = interpolate(player_x + dead_x + player.ahead_x, camera.x, 0.1)
   }
 
   let dead_y = 40
 
-  if (player.y - dead_y > camera.y) {
-    camera.y = interpolate(player.y - dead_y, camera.y, 0.1)
-  } else if (player.y + dead_y < camera.y) {
-    camera.y = interpolate(player.y + dead_y, camera.y, 0.1)
+  if (player_y - dead_y > camera.y) {
+    camera.y = interpolate(player_y - dead_y, camera.y, 0.1)
+  } else if (player_y + dead_y < camera.y) {
+    camera.y = interpolate(player_y + dead_y, camera.y, 0.1)
   }
 
 
@@ -376,8 +409,10 @@ function update_player(ii: Input, player: Player, delta: number, has_collided_pl
 function render_player(player: Player, alpha: number, cc: Canvas) {
     let x, y
 
-    x = player.prev_x ? interpolate(player.x, player.prev_x, alpha) : player.x
-    y = player.prev_y ? interpolate(player.y, player.prev_y, alpha) : player.y
+    let [player_x, player_y] = pos_xy(player)
+
+    x = player.prev_x ? interpolate(player_x, player.prev_x, alpha) : player_x
+    y = player.prev_y ? interpolate(player_y, player.prev_y, alpha) : player_y
 
     let facing = player.facing
 
@@ -441,8 +476,9 @@ function has_collided_grid(grid: Grid, x: number, y: number, w: number, h: numbe
 
 function pixel_perfect_position_update(pos: Position, delta: number, has_collided: (x: number, y: number, w: number, h: number) => boolean) {
 
-  pos.prev_x = pos.x
-  pos.prev_y = pos.y
+  let [pos_x, pos_y] = pos_xy(pos)
+  pos.prev_x = pos_x
+  pos.prev_y = pos_y
 
   let step_x = Math.sign(pos.dx)
   let tx = Math.abs(pos.dx * delta / 1000 + pos.rem_x)
@@ -450,15 +486,15 @@ function pixel_perfect_position_update(pos: Position, delta: number, has_collide
 
   pos.rem_x = (tx - sx) * Math.sign(pos.dx)
 
-  pos.hit_x = has_collided(pos.x + step_x, pos.y, pos.w, pos.h) ? step_x : undefined
+  pos.hit_x = has_collided(pos_x + step_x, pos_y, pos.w, pos.h) ? step_x : undefined
 
   for (let i = 0; i < sx; i++) {
-    if (has_collided(pos.x + step_x, pos.y, pos.w, pos.h)) {
+    if (has_collided(pos.i_x + step_x, pos.i_y, pos.w, pos.h)) {
       pos.dx = 0
       pos.hit_x = step_x
       break
     }
-    pos.x += step_x
+    pos.i_x += step_x
   }
 
   let step_y = Math.sign(pos.dy)
@@ -467,15 +503,14 @@ function pixel_perfect_position_update(pos: Position, delta: number, has_collide
 
   pos.rem_y = (ty - sy) * Math.sign(pos.dy)
 
-  pos.is_grounded = has_collided(pos.x, pos.y + 1, pos.w, pos.h)
+  pos.is_grounded = has_collided(pos_x, pos_y + 1, pos.w, pos.h)
 
   for (let i = 0; i < sy; i++) {
-    if (has_collided(pos.x, pos.y + step_y, pos.w, pos.h)) {
+    if (has_collided(pos.i_x, pos.i_y + step_y, pos.w, pos.h)) {
       pos.is_grounded = true
-      pos.ddy = 0
       pos.dy = 0
       break
     }
-    pos.y += step_y
+    pos.i_y += step_y
   }
 }
