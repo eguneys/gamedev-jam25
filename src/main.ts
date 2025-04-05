@@ -1,5 +1,5 @@
 import './style.css'
-import { get_tile_for_world, Grid, levels, load_tileset, render_grid } from './grid'
+import { get_tile_for_world, Grid, is_solid_tile, levels, load_tileset, render_grid } from './grid'
 
 const Color = {
   Black: '#606c81',
@@ -304,17 +304,63 @@ type HasCollidedXYWH = (x: number, y: number, w: number, h: number) => boolean |
 
 type Camera = { x: number, y: number }
 
+type E1 = Position & {
+
+}
+
+type E2 = Position & {
+
+}
+
+function e1(x: number, y: number) {
+  return {
+    ...position(x, y, 32, 32)
+  }
+}
+
+function e2(x: number, y: number) {
+  return {
+    ...position(x, y, 64, 64)
+  }
+}
+
+
 function Play(cc: Canvas, ii: Input) {
 
   let p0 = player(0, 0)
 
-  let grid = levels()
+  let e1s: E1[] = []
+  let e2s: E2[] = []
+
+  let [grid, entities] = levels()
+
+  for (let entity of entities) {
+    if (entity.src[0] === 136) {
+      p0.i_x = entity.px[0]
+      p0.i_y = entity.px[1]
+    }
+    if (entity.src[0] === 144) {
+
+      e1s.push(e1(...entity.px))
+    }
+    if (entity.src[0] = 156) {
+      e2s.push(e2(...entity.px))
+    }
+  }
 
   function has_collided_player(x: number, y: number, w: number, h: number) {
     return has_collided_grid(grid, x, y, w, h)
   }
+  function has_collided_e1(x: number, y: number, w: number, h: number) {
+    return has_collided_grid(grid, x, y, w, h)
+  }
 
   function _update(delta: number) {
+
+
+    for (let e1 of e1s) {
+      update_e1(e1, delta, has_collided_e1)
+    }
 
     update_player(ii, p0, delta, has_collided_player)
 
@@ -332,6 +378,14 @@ function Play(cc: Canvas, ii: Input) {
 
 
     render_grid(cc, grid)
+
+    for (let e1 of e1s) {
+      render_e1(e1, alpha, cc)
+    }
+
+    for (let e2 of e2s) {
+      render_e2(e2, alpha, cc)
+    }
 
     render_player(p0, alpha, cc)
   }
@@ -374,6 +428,10 @@ function update_camera(camera: Camera, player: Player, delta: number) {
     camera.y = interpolate(player_y + dead_y, camera.y, 0.1)
   }
 
+
+}
+
+function update_e1(e1: E1, delta: number, has_collided_e1: HasCollidedXYWH) {
 
 }
 
@@ -496,6 +554,23 @@ function update_player(ii: Input, player: Player, delta: number, has_collided_pl
 
 }
 
+function render_e1(e1: E1, alpha: number, cc: Canvas) {
+    let x, y
+
+    let [e1_x, e1_y] = pos_xy(e1)
+
+    x = e1.prev_x ? interpolate(e1_x, e1.prev_x, alpha) : e1_x
+    y = e1.prev_y ? interpolate(e1_y, e1.prev_y, alpha) : e1_y
+
+    let facing = e1.facing
+
+    if (facing === 0) {
+
+    }
+}
+function render_e2(e2: E2, alpha: number, cc: Canvas) {
+}
+
 function render_player(player: Player, alpha: number, cc: Canvas) {
     let x, y
 
@@ -563,7 +638,7 @@ function has_collided_grid(grid: Grid, x: number, y: number, w: number, h: numbe
 
   for (let i = x; i < x + w; i++) {
     for (let j = y; j < y + h; j++) {
-      if (get_tile_for_world(grid, i, j) !== undefined) {
+      if (is_solid_tile(grid, get_tile_for_world(grid, i, j))) {
         return [Math.floor(i / grid.tile_size) * grid.tile_size, Math.floor(j / grid.tile_size) * grid.tile_size] as [number, number]
       }
     }

@@ -57,17 +57,8 @@ function add_tile(grid: Grid, wx: number, wy: number, tile: Tile | undefined) {
     grid.tiles[tx + ty * grid.tw] = tile
 }
 
-let i_tile = 0
 function get_or_create_tile_for_src(grid: Grid, src: [number, number]) {
-    for (let tile in grid.tile_to_sources) {
-        let tsrc = grid.tile_to_sources[tile]
-        if (tsrc[0] === src[0] && tsrc[1] === src[1]) {
-            return parseInt(tile)
-        }
-    }
-
-    let res = i_tile++
-
+    let res = src[0] + src[1] * 1000
     grid.tile_to_sources[res] = src
     return res
 }
@@ -79,18 +70,39 @@ function px_src_to_tile(px_src: PxSrc) {
     }
 }
 
+export function is_solid_tile(_grid: Grid, tile?: Tile) {
+    if (!tile) {
+        return false
+    }
+
+    let [_x, y] = [tile % 1000, Math.floor(tile / 1000)]
+
+    if (y > 100) {
+        return false
+    }
+
+    return true
+}
+
 export function levels() {
 
     let l0 = JSON.parse(level0).levels[0]
     let res = grid(l0.worldX, l0.worldY, l0.pxWid, l0.pxHei)
 
+    let entities = []
+
     for (let px_src of l0.layerInstances[1].autoLayerTiles.map(px_src_to_tile)) {
         let tile = get_or_create_tile_for_src(res, px_src.src)
+
+        if (px_src.src[1] > 100) {
+            entities.push(px_src)
+            continue
+        }
+
         add_tile(res, px_src.px[0], px_src.px[1], tile)
     }
-    console.log(res)
 
-    return res
+    return [res, entities] as [Grid, PxSrc[]]
 }
 
 export function render_grid(cc: Canvas, grid: Grid) {
