@@ -192,7 +192,7 @@ function app(el: HTMLElement) {
 
   let pp = Play(cc, ii)
 
-  let rr = Promise.all([
+  Promise.all([
     load_tileset(),
     load_image(sheet, spritesheet_png),
     load_image(bg_image, bg_png),
@@ -274,10 +274,14 @@ type Player = Position & {
   t_knock: number
   t_knock_cool: number
   flash_skip: boolean
+
+  anim: Anim
 }
+
 
 function player(x: number, y: number): Player {
   return { ...position(x, y, 16, 16), 
+    anim: anim(0, 136, 32, 32, ['idle', 'run', 'fall', 'ledge']),
     ix: 0, iy: 0, 
     jx: 0, jl: 0, 
     jboost: 0,
@@ -298,30 +302,30 @@ function player_boxes(player: Player) {
   let [player_x, player_y] = pos_xy(player)
 
   let p_box: XYWH = [
-    player_x,
-    player_y,
-    player.w,
-    player.h
+    player_x + 2,
+    player_y + 2,
+    player.w - 2,
+    player.h - 2
   ]
 
   let r_ledge_box: XYWH = [
-    player_x + player.w / 2 + 4,
-    player_y,
-    8,
-    16
+    p_box[0] + p_box[2] / 2 + 6,
+    p_box[1],
+    p_box[2] / 2,
+    p_box[3]
   ]
 
   let l_ledge_box: XYWH = [
-    player_x - 4,
-    player_y,
-    8,
-    16
+    p_box[0] - 4,
+    p_box[1],
+    p_box[2] / 2,
+    p_box[3]
   ]
   let down_ledge_clear_box: XYWH = [
-    player_x,
-    player_y - 8,
+    p_box[0],
+    p_box[1] - 4,
     player.w,
-    player.h + 8
+    player.h + 4
   ]
 
   return {
@@ -402,14 +406,16 @@ function e2(x: number, y: number): E2 {
     anim: anim(0, 0, 32, 32)
   }
 }
-function anim(x: number, y: number, w: number, h: number, nb_frames = 3): Anim {
+function anim(x: number, y: number, w: number, h: number, y_frames = ['idle'], nb_frames = 3): Anim {
   return {
     x, y,
     w, h,
     i: 0,
     t_frame: 0,
     duration: 111,
-    nb_frames
+    nb_frames,
+    y_frames,
+    y_frame: y_frames[0]
   }
 }
 
@@ -578,16 +584,16 @@ function update_anim(anim: Anim, delta: number) {
   }
 }
 
-function update_e2(e2: E2, delta: number, has_collided_e2: HasCollidedXYWH) {
+function update_e2(e2: E2, delta: number, _has_collided_e2: HasCollidedXYWH) {
   update_anim(e2.anim, delta)
 }
 
 
-function update_e1(e1: E1, delta: number, has_collided_e1: HasCollidedXYWH) {
-
+function update_e1(e1: E1, delta: number, _has_collided_e1: HasCollidedXYWH) {
   update_anim(e1.anim, delta)
 }
 
+const ledge_cooldown = 380
 function update_player(ii: Input, player: Player, delta: number, has_collided_player: HasCollidedXYWH) {
     if (ii.btn('jump')) {
       if (player.j_pp === undefined) {
@@ -617,7 +623,11 @@ function update_player(ii: Input, player: Player, delta: number, has_collided_pl
     player.is_left = player.ix === -1
     player.is_right = player.ix === 1
 
-    player.facing = player.hit_x ? Math.sign(player.hit_x) : Math.sign(player.dx)
+    if (player.hit_x !== undefined && player.hit_x !== 0) {
+      player.facing = Math.sign(player.hit_x)
+    } else if (player.dx !== 0) {
+      player.facing = Math.sign(player.dx)
+    }
 
     if (player.is_grounded) {
       player.jl = 1
@@ -674,7 +684,6 @@ function update_player(ii: Input, player: Player, delta: number, has_collided_pl
       let r_ledge = has_collided_player(...r_ledge_box)
       let l_ledge = has_collided_player(...l_ledge_box)
 
-      const ledge_cooldown = 180
       if (d_ledge === false) {
         if (player.is_right && Array.isArray(r_ledge)) {
 
@@ -687,7 +696,7 @@ function update_player(ii: Input, player: Player, delta: number, has_collided_pl
           }
         } else if (player.is_left && Array.isArray(l_ledge)) {
 
-          if (has_collided_player(l_ledge[0] - 8, l_ledge[1] - 16, p_box[2], p_box[3])) {
+          if (has_collided_player(l_ledge[0], l_ledge[1] - 16, p_box[2], p_box[3])) {
 
           } else {
             player.t_ledge = ledge_cooldown
@@ -701,7 +710,7 @@ function update_player(ii: Input, player: Player, delta: number, has_collided_pl
       player.t_ledge = appr(player.t_ledge, 0, delta)
 
       if (player.t_ledge === 0) {
-        player.i_y = p_box[1] - 8
+        player.i_y = p_box[1] - p_box[3]
         player.dy = 0
       }
     }
@@ -761,22 +770,26 @@ function update_player(ii: Input, player: Player, delta: number, has_collided_pl
 
     pixel_perfect_position_update(player, delta, has_collided_player)
 
-}
 
-function render_e1(e1: E1, alpha: number, cc: Canvas) {
-    let x, y
-
-    let [e1_x, e1_y] = pos_xy(e1)
-
-    x = e1.prev_x ? interpolate(e1_x, e1.prev_x, alpha) : e1_x
-    y = e1.prev_y ? interpolate(e1_y, e1.prev_y, alpha) : e1_y
-
-    let facing = e1.facing
-
-    if (facing === 0) {
-
+    player.anim.duration = 100
+    if (player.ix !== 0) {
+      player.anim.y_frame = 'run'
+    } else {
+      player.anim.y_frame = 'idle'
     }
 
+    if (!player.is_grounded && player.dy !== 0) {
+      player.anim.y_frame = 'fall'
+    }
+    if (player.t_ledge !== 0) {
+      player.anim.y_frame = 'ledge'
+      player.anim.duration = ledge_cooldown / 3
+    }
+
+    update_anim(player.anim, delta)
+}
+
+function render_e1(_e1: E1, _alpha: number, _cc: Canvas) {
 }
 
 function render_e2(e2: E2, alpha: number, cc: Canvas) {
@@ -787,7 +800,7 @@ function render_e2(e2: E2, alpha: number, cc: Canvas) {
   x = e2.prev_x ? interpolate(e2_x, e2.prev_x, alpha) : e2_x
   y = e2.prev_y ? interpolate(e2_y, e2.prev_y, alpha) : e2_y
 
-  render_anim(cc, e2.anim, e2.facing, e2_x, e2_y)
+  render_anim(cc, e2.anim, e2.facing, x, y)
 
 
     let { 
@@ -825,10 +838,13 @@ type Anim = {
   t_frame: number
   duration: number
   nb_frames: number
+  y_frames: string[]
+  y_frame: string
 }
 function render_anim(cc: Canvas, anim: Anim, facing: number, x: number, y: number) {
+  let iy = anim.y_frames.indexOf(anim.y_frame)
   let sx = anim.x + anim.w * anim.i
-  let sy = anim.y
+  let sy = anim.y + iy * anim.h
   
   if (facing === 0) {
     cc.set_transform(x, y, 1, 1)
@@ -840,12 +856,6 @@ function render_anim(cc: Canvas, anim: Anim, facing: number, x: number, y: numbe
   }
   cc.image(sheet, 0, 0, sx, sy, anim.w, anim.h)
   cc.reset_transform()
-}
-
-function on_interval(interval: number, time: number, dt: number, offset = 0) {
-  let last = Math.floor((time - offset - dt) / interval)
-  let next = Math.floor((time - offset) / interval)
-  return last < next
 }
 
 function render_player(player: Player, alpha: number, cc: Canvas) {
@@ -860,25 +870,9 @@ function render_player(player: Player, alpha: number, cc: Canvas) {
     x = player.prev_x ? interpolate(player_x, player.prev_x, alpha) : player_x
     y = player.prev_y ? interpolate(player_y, player.prev_y, alpha) : player_y
 
-    let facing = player.facing
+  let facing = player.facing
+  render_anim(cc, player.anim, facing, x - 8, y - 16)
 
-    if (facing === 0) {
-      cc.set_transform(x, y, 1, 1)
-      cc.rect(0, 0, 16, 16, Color.HeroOut1)
-      cc.rect(0, 0, 16, 3, Color.HeroSecondary)
-      cc.rect(2, 2 + 2, 2, 4, Color.HeroAccent)
-      cc.rect(0 + 16 - 4, 0 + 4, 2, 4, Color.HeroAccent)
-      cc.reset_transform()
-    } else {
-      if (facing === -1) {
-        x += 16
-      }
-      cc.set_transform(x, y, facing, 1)
-      cc.rect(0, 0, 16, 16, Color.HeroOut1)
-      cc.rect(0, 0, 6, 6, Color.HeroSecondary)
-      cc.rect(0 + 14, 0 + 2, 2, 4, Color.HeroAccent)
-      cc.reset_transform()
-    }
 
     let { p_box, r_ledge_box, l_ledge_box, down_ledge_clear_box } = player_boxes(player)
     if (false) {
