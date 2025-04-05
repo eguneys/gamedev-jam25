@@ -1,6 +1,8 @@
 import './style.css'
 import { get_tile_for_world, Grid, is_solid_tile, levels, load_tileset, render_grid } from './grid'
 import spritesheet_png from './assets/spritesheet.png'
+import bg_png from './assets/bg.png'
+import city_png from './assets/city.png'
 
 const Color = {
   Black: '#606c81',
@@ -173,11 +175,13 @@ function Input() {
 }
 
 let sheet = new Image()
+let bg_image = new Image()
+let city_image = new Image()
 
-function load_image() {
+function load_image(sheet: HTMLImageElement, src: string) {
   return new Promise(resolve => {
     sheet.onload = resolve
-    sheet.src = spritesheet_png
+    sheet.src = src
   })
 }
 
@@ -188,8 +192,13 @@ function app(el: HTMLElement) {
 
   let pp = Play(cc, ii)
 
-  load_tileset()
-  load_image()
+  let rr = Promise.all([
+    load_tileset(),
+    load_image(sheet, spritesheet_png),
+    load_image(bg_image, bg_png),
+    load_image(city_image, city_png)
+  ])
+
   Loop(pp._update, pp._render)
 
   el.appendChild(cc.canvas)
@@ -404,8 +413,17 @@ function anim(x: number, y: number, w: number, h: number, nb_frames = 3): Anim {
   }
 }
 
+type BG = {
+  clouds_x: number
+  city_x: number
+}
 
 function Play(cc: Canvas, ii: Input) {
+
+  let bg: BG = {
+    clouds_x: 0,
+    city_x: 0
+  }
 
   let p0 = player(0, 0)
 
@@ -436,6 +454,8 @@ function Play(cc: Canvas, ii: Input) {
 
   function _update(delta: number) {
 
+    update_bg(grid, bg, cc.camera, delta)
+
     let { p_box } = player_boxes(p0)
 
     for (let e1 of e1s) {
@@ -456,7 +476,7 @@ function Play(cc: Canvas, ii: Input) {
 
     update_player(ii, p0, delta, has_collided_player)
 
-    update_camera(cc.camera, p0, delta)
+    update_camera(grid, cc.camera, p0, delta)
 
     ii.update()
   }
@@ -465,9 +485,8 @@ function Play(cc: Canvas, ii: Input) {
   function _render(alpha: number) {
     cc.rect(0, 0, 320, 180, Color.Black)
 
-    cc.rect(0, 162, 320, 8, Color.ForeBrown)
-    cc.rect(0, 162, 320, 1, Color.ForeGreen)
 
+    render_bg(cc, bg)
 
     render_grid(cc, grid)
 
@@ -490,7 +509,28 @@ function Play(cc: Canvas, ii: Input) {
   }
 }
 
-function update_camera(camera: Camera, player: Player, delta: number) {
+function update_bg(grid: Grid, bg: BG, camera: Camera, delta: number) {
+
+  let bg_factor = grid.w / (bg_image.width * 30)
+  bg.clouds_x = appr(bg.clouds_x, -(camera.x - 320 / 2) * bg_factor, delta)
+
+  let city_factor = grid.w / (city_image.width * 10)
+  bg.city_x = appr(bg.city_x, -(camera.x - 320 / 2) * city_factor, delta)
+}
+
+function render_bg(cc: Canvas, bg: BG) {
+  cc.set_transform(bg.clouds_x, 0, 1, 1)
+  cc.image(bg_image, 0, 0, 0, 0, bg_image.width, bg_image.height)
+  cc.image(bg_image, bg_image.width, 0, 0, 0, bg_image.width, bg_image.height)
+  cc.reset_transform()
+
+  cc.set_transform(bg.city_x, 0, 1, 1)
+  cc.image(city_image, 0, 0, 0, 0, city_image.width, city_image.height)
+  cc.image(city_image, city_image.width, 0, 0, 0, city_image.width, city_image.height)
+  cc.reset_transform()
+}
+
+function update_camera(grid: Grid, camera: Camera, player: Player, delta: number) {
 
   let dead_x = 70
   let look_x = dead_x * 1.77
@@ -521,6 +561,8 @@ function update_camera(camera: Camera, player: Player, delta: number) {
   }
 
 
+  camera.x = Math.min(Math.max(320 / 2, camera.x), grid.w - 320 / 2)
+  camera.y = Math.min(Math.max(180 / 2, camera.y), grid.h - 180 / 2)
 }
 
 function update_anim(anim: Anim, delta: number) {
@@ -678,10 +720,10 @@ function update_player(ii: Input, player: Player, delta: number, has_collided_pl
       } else if (player.t_knock > 0) {
         player.t_knock = appr(player.t_knock, 0, delta)
         if (player.t_knock === 0) {
-          player.t_knock_cool = 1000
+          player.t_knock_cool = 1200
         }
       } else {
-        player.t_knock = 800
+        player.t_knock = 500
         let [b_x, b_y] = pos_xy_center(player.knock_box)
         let [p_x, p_y] = pos_xy_center(player)
 
@@ -697,7 +739,6 @@ function update_player(ii: Input, player: Player, delta: number, has_collided_pl
           s_y = -1
         }
 
-        console.log(d_x, d_y)
         let a_x = Math.max(11, Math.min(Math.abs(d_x), 16))
         let a_y = Math.max(16, Math.min(Math.abs(d_y), 26))
 
