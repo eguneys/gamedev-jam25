@@ -232,11 +232,17 @@ function position(x: number, y: number, w: number, h: number): Position {
 type Player = Position & {
   ix: number
   iy: number
-  jx: number,
+  jx: number
   jl: number
-  jboost: number,
+  jboost: number
   j_pp?: boolean
   ahead_x: number
+
+  is_left: boolean
+  is_right: boolean
+
+  t_ledge: number
+  t_knoll: number
 }
 
 function player(x: number, y: number) {
@@ -244,13 +250,57 @@ function player(x: number, y: number) {
     ix: 0, iy: 0, 
     jx: 0, jl: 0, 
     jboost: 0,
-    ahead_x: 0
+    ahead_x: 0,
+    is_left: false,
+    is_right: false,
+    t_ledge: 0,
+    t_knoll: 0
+  }
+}
+
+type XYWH = [number, number, number, number]
+
+function player_boxes(player: Player) {
+  let [player_x, player_y] = pos_xy(player)
+
+  let p_box: XYWH = [
+    player_x,
+    player_y,
+    player.w,
+    player.h
+  ]
+
+  let r_ledge_box: XYWH = [
+    player_x + player.w / 2 + 4,
+    player_y,
+    8,
+    16
+  ]
+
+  let l_ledge_box: XYWH = [
+    player_x - 4,
+    player_y,
+    8,
+    16
+  ]
+  let down_ledge_clear_box: XYWH = [
+    player_x,
+    player_y - 8,
+    player.w,
+    player.h + 8
+  ]
+
+  return {
+    p_box,
+    r_ledge_box,
+    l_ledge_box,
+    down_ledge_clear_box,
   }
 }
 
 const p_max_dx = 100
 
-type HasCollidedXYWH = (x: number, y: number, w: number, h: number) => boolean
+type HasCollidedXYWH = (x: number, y: number, w: number, h: number) => boolean | [number, number]
 
 type Camera = { x: number, y: number }
 
@@ -349,11 +399,13 @@ function update_player(ii: Input, player: Player, delta: number, has_collided_pl
       player.ix = 0
     }
 
+    player.is_left = player.ix === -1
+    player.is_right = player.ix === 1
 
     player.facing = player.hit_x ? Math.sign(player.hit_x) : Math.sign(player.dx)
 
     if (player.is_grounded) {
-      player.jl = 2
+      player.jl = 1
     }
 
     const max_jump_boost = 400
@@ -400,9 +452,47 @@ function update_player(ii: Input, player: Player, delta: number, has_collided_pl
     player.ddx = appr(player.ddx, 1, delta)
     player.ddy = appr(player.ddy, 1, delta * 0.03)
 
+    let { p_box, r_ledge_box, l_ledge_box, down_ledge_clear_box } = player_boxes(player)
+
+    if (player.t_ledge === 0) {
+      let d_ledge = has_collided_player(...down_ledge_clear_box)
+      let r_ledge = has_collided_player(...r_ledge_box)
+      let l_ledge = has_collided_player(...l_ledge_box)
+
+      const ledge_cooldown = 180
+      if (d_ledge === false) {
+        if (player.is_right && Array.isArray(r_ledge)) {
+
+          if (has_collided_player(r_ledge[0] - 8, r_ledge[1] - 16, p_box[2], p_box[3])) {
+
+          } else {
+            player.t_ledge = ledge_cooldown
+            player.i_x = r_ledge[0] - 8
+            player.i_y = r_ledge[1] - 8
+          }
+        } else if (player.is_left && Array.isArray(l_ledge)) {
+
+          if (has_collided_player(l_ledge[0] - 8, l_ledge[1] - 16, p_box[2], p_box[3])) {
+
+          } else {
+            player.t_ledge = ledge_cooldown
+            player.i_x = l_ledge[0]
+            player.i_y = l_ledge[1] - 8
+          }
+        }
+      }
+    } else {
+
+      player.t_ledge = appr(player.t_ledge, 0, delta)
+
+      if (player.t_ledge === 0) {
+        player.i_y = p_box[1] - 8
+        player.dy = 0
+      }
+    }
+
+
     pixel_perfect_position_update(player, delta, has_collided_player)
-
-
 
 }
 
@@ -434,10 +524,18 @@ function render_player(player: Player, alpha: number, cc: Canvas) {
       cc.reset_transform()
     }
 
-
-    //cc.rect(player.x, player.y, player.w, player.h, 'red')
+    return
+    let { r_ledge_box, l_ledge_box, down_ledge_clear_box } = player_boxes(player)
+    render_box(cc, r_ledge_box, 'yellow')
+    render_box(cc, l_ledge_box, 'yellow')
+    render_box(cc, down_ledge_clear_box)
 }
 
+function render_box(cc: Canvas, xywh: XYWH, color = 'red') {
+    cc.set_transform(xywh[0], xywh[1], 1, 1)
+    cc.rect(0, 0, xywh[2], xywh[3], color)
+    cc.reset_transform()
+}
 
 function interpolate(x: number, prev: number, alpha: number) {
   return prev + (x - prev) * alpha
@@ -466,7 +564,7 @@ function has_collided_grid(grid: Grid, x: number, y: number, w: number, h: numbe
   for (let i = x; i < x + w; i++) {
     for (let j = y; j < y + h; j++) {
       if (get_tile_for_world(grid, i, j) !== undefined) {
-        return true
+        return [Math.floor(i / grid.tile_size) * grid.tile_size, Math.floor(j / grid.tile_size) * grid.tile_size] as [number, number]
       }
     }
   }
@@ -474,7 +572,7 @@ function has_collided_grid(grid: Grid, x: number, y: number, w: number, h: numbe
   return false
 }
 
-function pixel_perfect_position_update(pos: Position, delta: number, has_collided: (x: number, y: number, w: number, h: number) => boolean) {
+function pixel_perfect_position_update(pos: Position, delta: number, has_collided: HasCollidedXYWH) {
 
   let [pos_x, pos_y] = pos_xy(pos)
   pos.prev_x = pos_x
@@ -503,11 +601,11 @@ function pixel_perfect_position_update(pos: Position, delta: number, has_collide
 
   pos.rem_y = (ty - sy) * Math.sign(pos.dy)
 
-  pos.is_grounded = has_collided(pos_x, pos_y + 1, pos.w, pos.h)
+  pos.is_grounded = has_collided(pos_x, pos_y + 1, pos.w, pos.h) !== false
 
   for (let i = 0; i < sy; i++) {
     if (has_collided(pos.i_x, pos.i_y + step_y, pos.w, pos.h)) {
-      pos.is_grounded = true
+      pos.is_grounded = step_y > 1
       pos.dy = 0
       break
     }
