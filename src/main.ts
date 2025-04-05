@@ -1,5 +1,6 @@
 import './style.css'
 import { get_tile_for_world, Grid, is_solid_tile, levels, load_tileset, render_grid } from './grid'
+import spritesheet_png from './assets/spritesheet.png'
 
 const Color = {
   Black: '#606c81',
@@ -171,6 +172,14 @@ function Input() {
   }
 }
 
+let sheet = new Image()
+
+function load_image() {
+  return new Promise(resolve => {
+    sheet.onload = resolve
+    sheet.src = spritesheet_png
+  })
+}
 
 function app(el: HTMLElement) {
 
@@ -180,6 +189,7 @@ function app(el: HTMLElement) {
   let pp = Play(cc, ii)
 
   load_tileset()
+  load_image()
   Loop(pp._update, pp._render)
 
   el.appendChild(cc.canvas)
@@ -210,6 +220,13 @@ type Position = {
 function pos_xy(p: Position) {
   return [p.i_x + p.rem_x, p.i_y, + p.rem_y]
 }
+function pos_xy_center(p: Position) {
+  let [x, y] = pos_xy(p)
+
+  return [x + p.w / 2, y + p.h / 2]
+}
+
+
 
 function position(x: number, y: number, w: number, h: number): Position {
   return {
@@ -243,9 +260,14 @@ type Player = Position & {
 
   t_ledge: number
   t_knoll: number
+
+  knock_box?: E2
+  t_knock: number
+  t_knock_cool: number
+  flash_skip: boolean
 }
 
-function player(x: number, y: number) {
+function player(x: number, y: number): Player {
   return { ...position(x, y, 16, 16), 
     ix: 0, iy: 0, 
     jx: 0, jl: 0, 
@@ -254,7 +276,10 @@ function player(x: number, y: number) {
     is_left: false,
     is_right: false,
     t_ledge: 0,
-    t_knoll: 0
+    t_knoll: 0,
+    t_knock: 0,
+    t_knock_cool: 0,
+    flash_skip: false
   }
 }
 
@@ -298,6 +323,47 @@ function player_boxes(player: Player) {
   }
 }
 
+function e1_boxes(c: E1) {
+  let [c_x, c_y] = pos_xy(c)
+
+  let c_box: XYWH = [
+    c_x,
+    c_y,
+    c.w,
+    c.h
+  ]
+
+
+  let eye_left_box: XYWH = [
+    c_x - c.w * 3.2,
+    c_y,
+    c.w * 3,
+    c.h
+  ]
+
+  let eye_right_box: XYWH = [
+    c_x + c.w * 1.2,
+    c_y,
+    c.w * 3,
+    c.h
+  ]
+
+  let eye_up_box: XYWH = [
+    c_x,
+    c_y - c.h * 1.4, 
+    c.w,
+    c.h * 1.4 
+  ]
+
+  return {
+    c_box,
+    eye_left_box,
+    eye_right_box,
+    eye_up_box
+  }
+}
+
+
 const p_max_dx = 100
 
 type HasCollidedXYWH = (x: number, y: number, w: number, h: number) => boolean | [number, number]
@@ -305,22 +371,36 @@ type HasCollidedXYWH = (x: number, y: number, w: number, h: number) => boolean |
 type Camera = { x: number, y: number }
 
 type E1 = Position & {
+  anim: Anim
 
 }
 
 type E2 = Position & {
+  anim: Anim
 
 }
 
-function e1(x: number, y: number) {
+function e1(x: number, y: number): E1 {
   return {
-    ...position(x, y, 32, 32)
+    ...position(x, y - 32, 32, 32),
+    anim: anim(0, 0, 32, 32)
   }
 }
 
-function e2(x: number, y: number) {
+function e2(x: number, y: number): E2 {
   return {
-    ...position(x, y, 64, 64)
+    ...position(x, y - 24, 32, 32),
+    anim: anim(0, 0, 32, 32)
+  }
+}
+function anim(x: number, y: number, w: number, h: number, nb_frames = 3): Anim {
+  return {
+    x, y,
+    w, h,
+    i: 0,
+    t_frame: 0,
+    duration: 111,
+    nb_frames
   }
 }
 
@@ -339,11 +419,10 @@ function Play(cc: Canvas, ii: Input) {
       p0.i_x = entity.px[0]
       p0.i_y = entity.px[1]
     }
-    if (entity.src[0] === 144) {
-
+    if (entity.src[0] === 152) {
       e1s.push(e1(...entity.px))
     }
-    if (entity.src[0] = 156) {
+    if (entity.src[0] === 144) {
       e2s.push(e2(...entity.px))
     }
   }
@@ -357,9 +436,22 @@ function Play(cc: Canvas, ii: Input) {
 
   function _update(delta: number) {
 
+    let { p_box } = player_boxes(p0)
 
     for (let e1 of e1s) {
       update_e1(e1, delta, has_collided_e1)
+
+    }
+    for (let e2 of e2s) {
+      update_e2(e2, delta, has_collided_e1)
+
+      let { c_box } = e1_boxes(e2)
+
+      if (p0.knock_box === undefined) {
+        if (box_intersect(c_box, p_box)) {
+          p0.knock_box = e2
+        }
+      }
     }
 
     update_player(ii, p0, delta, has_collided_player)
@@ -431,8 +523,27 @@ function update_camera(camera: Camera, player: Player, delta: number) {
 
 }
 
+function update_anim(anim: Anim, delta: number) {
+
+  anim.t_frame = appr(anim.t_frame, 0, delta)
+
+  if (anim.t_frame === 0) {
+    anim.t_frame = anim.duration
+    anim.i = anim.i + 1
+    if (anim.i >= anim.nb_frames) {
+      anim.i = 0
+    }
+  }
+}
+
+function update_e2(e2: E2, delta: number, has_collided_e2: HasCollidedXYWH) {
+  update_anim(e2.anim, delta)
+}
+
+
 function update_e1(e1: E1, delta: number, has_collided_e1: HasCollidedXYWH) {
 
+  update_anim(e1.anim, delta)
 }
 
 function update_player(ii: Input, player: Player, delta: number, has_collided_player: HasCollidedXYWH) {
@@ -454,6 +565,10 @@ function update_player(ii: Input, player: Player, delta: number, has_collided_pl
     } else if (ii.btn('right')) {
       player.ix = 1
     } else {
+      player.ix = 0
+    }
+
+    if (player.t_knock > 0) {
       player.ix = 0
     }
 
@@ -549,6 +664,59 @@ function update_player(ii: Input, player: Player, delta: number, has_collided_pl
       }
     }
 
+    if (player.t_knock_cool > 0) {
+      player.t_knock_cool = appr(player.t_knock_cool, 0, delta)
+      if (player.t_knock_cool === 0) {
+
+        player.knock_box = undefined
+      }
+    }
+
+    if (player.knock_box) {
+      if (player.t_knock_cool > 0) {
+
+      } else if (player.t_knock > 0) {
+        player.t_knock = appr(player.t_knock, 0, delta)
+        if (player.t_knock === 0) {
+          player.t_knock_cool = 1000
+        }
+      } else {
+        player.t_knock = 800
+        let [b_x, b_y] = pos_xy_center(player.knock_box)
+        let [p_x, p_y] = pos_xy_center(player)
+
+        let [d_x, d_y] = [p_x - b_x, p_y - b_y]
+
+        let s_x = Math.sign(d_x)
+        let s_y = Math.sign(d_y)
+
+        if (s_x === 0) {
+          s_x = -1
+        }
+        if (s_y === 0) {
+          s_y = -1
+        }
+
+        console.log(d_x, d_y)
+        let a_x = Math.max(11, Math.min(Math.abs(d_x), 16))
+        let a_y = Math.max(16, Math.min(Math.abs(d_y), 26))
+
+        player.dx = s_x * a_x * 18
+        player.dy = a_y * -22
+      }
+    }
+
+  player.flash_skip = false
+  if (player.t_knock > 0) {
+    if (player.t_knock % 200 < 100) {
+      player.flash_skip = true
+    }
+  }
+  if (player.t_knock_cool > 0) {
+    if (player.t_knock_cool % 300 < 160) {
+      player.flash_skip = true
+    }
+  }
 
     pixel_perfect_position_update(player, delta, has_collided_player)
 
@@ -567,11 +735,83 @@ function render_e1(e1: E1, alpha: number, cc: Canvas) {
     if (facing === 0) {
 
     }
+
 }
+
 function render_e2(e2: E2, alpha: number, cc: Canvas) {
+  let x, y
+
+  let [e2_x, e2_y] = pos_xy(e2)
+
+  x = e2.prev_x ? interpolate(e2_x, e2.prev_x, alpha) : e2_x
+  y = e2.prev_y ? interpolate(e2_y, e2.prev_y, alpha) : e2_y
+
+  render_anim(cc, e2.anim, e2.facing, e2_x, e2_y)
+
+
+    let { 
+      eye_right_box, 
+      eye_left_box ,
+      eye_up_box,
+      c_box
+    } = e1_boxes(e2)
+
+    let [cx, cy] = pos_xy_center(e2)
+
+    if (false) {
+      cc.set_transform(cx, cy, 1, 1)
+      cc.rect(0, 0, 2, 2, 'blue')
+      cc.reset_transform()
+    }
+
+    if (false) {
+      render_box(cc, c_box)
+    }
+
+    if (false) {
+      render_box(cc, eye_left_box)
+      render_box(cc, eye_right_box)
+      render_box(cc, eye_up_box)
+    }
+}
+
+type Anim = {
+  x: number
+  y: number
+  w: number
+  h: number
+  i: number
+  t_frame: number
+  duration: number
+  nb_frames: number
+}
+function render_anim(cc: Canvas, anim: Anim, facing: number, x: number, y: number) {
+  let sx = anim.x + anim.w * anim.i
+  let sy = anim.y
+  
+  if (facing === 0) {
+    cc.set_transform(x, y, 1, 1)
+  } else {
+    if (facing === -1) {
+      x += anim.w
+    }
+    cc.set_transform(x, y, facing, 1)
+  }
+  cc.image(sheet, 0, 0, sx, sy, anim.w, anim.h)
+  cc.reset_transform()
+}
+
+function on_interval(interval: number, time: number, dt: number, offset = 0) {
+  let last = Math.floor((time - offset - dt) / interval)
+  let next = Math.floor((time - offset) / interval)
+  return last < next
 }
 
 function render_player(player: Player, alpha: number, cc: Canvas) {
+  if (player.flash_skip) {
+    return
+  }
+
     let x, y
 
     let [player_x, player_y] = pos_xy(player)
@@ -599,11 +839,26 @@ function render_player(player: Player, alpha: number, cc: Canvas) {
       cc.reset_transform()
     }
 
-    return
-    let { r_ledge_box, l_ledge_box, down_ledge_clear_box } = player_boxes(player)
-    render_box(cc, r_ledge_box, 'yellow')
-    render_box(cc, l_ledge_box, 'yellow')
-    render_box(cc, down_ledge_clear_box)
+    let { p_box, r_ledge_box, l_ledge_box, down_ledge_clear_box } = player_boxes(player)
+    if (false) {
+      render_box(cc, r_ledge_box, 'yellow')
+      render_box(cc, l_ledge_box, 'yellow')
+      render_box(cc, down_ledge_clear_box)
+    }
+    if (false) {
+      render_box(cc, p_box)
+    }
+
+
+    let [cx, cy] = pos_xy_center(player)
+
+    if (false) {
+      cc.set_transform(cx, cy, 1, 1)
+      cc.rect(0, 0, 10, 10, 'blue')
+      cc.reset_transform()
+    }
+
+
 }
 
 function render_box(cc: Canvas, xywh: XYWH, color = 'red') {
@@ -686,4 +941,17 @@ function pixel_perfect_position_update(pos: Position, delta: number, has_collide
     }
     pos.i_y += step_y
   }
+}
+
+
+function box_intersect(a: XYWH, b: XYWH) {
+  let [a_x, a_y, a_width, a_height] = a
+  let [b_x, b_y, b_width, b_height] = b
+
+  return !(
+    a_x + a_width <= b_x ||
+    a_x >= b_x + b_width ||
+    a_y + a_height <= b_y ||
+    a_y >= b_y + b_height
+  );
 }
