@@ -119,7 +119,7 @@ export function render_grid(cc: Canvas, grid: Grid) {
             let y = tiy * grid.tile_size
             let [sx, sy] = grid.tile_to_sources[tile]
 
-            cc.set_transform(g_x + x, g_y + y, 1, 1)
+            cc.set_transform(x, y, 1, 1)
             cc.image(tile_img, 0, 0, sx, sy, 8, 8)
         }
     }

@@ -496,7 +496,7 @@ type Checkpoint = Position & {
 
 function checkpoint(x: number, y: number) {
   return {
-    ...position(x, y - 8, 32, 32),
+    ...position(x, y - 24, 32, 32),
     anim: anim(576, 0, 32, 32, ['lock', 'unlock', 'enter'], 2),
     is_locked: true,
     t_enter: 0
@@ -555,6 +555,18 @@ function Play(cc: Canvas, ii: Input) {
 
   load_level()
 
+  function safe_load_level() {
+    try {
+      load_level()
+    } catch (e) {
+      goto_end()
+    }
+  }
+
+  function goto_end() {
+
+  }
+
   function has_collided_player(x: number, y: number, w: number, h: number) {
     return has_collided_grid(grid, x, y, w, h)
   }
@@ -566,11 +578,11 @@ function Play(cc: Canvas, ii: Input) {
 
     update_bg(grid, bg, cc.camera, delta)
 
-    update_checkpoints(checkpoints, fxs, coins, delta, load_level)
+    update_checkpoints(checkpoints, fxs, coins, delta, safe_load_level)
 
     let { p_box } = player_boxes(p0)
 
-    if (!checkpoints.is_locked) {
+    if (!checkpoints.is_locked && checkpoints.t_enter === 0) {
       let { c_box } = c_boxes(checkpoints)
 
       if (box_intersect(c_box, p_box)) {
