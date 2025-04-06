@@ -3,6 +3,7 @@ import { get_tile_for_world, Grid, is_solid_tile, levels, load_tileset, render_g
 import spritesheet_png from './assets/spritesheet.png'
 import bg_png from './assets/bg.png'
 import city_png from './assets/city.png'
+import intro_png from './assets/intro.png'
 
 const Color = {
   Black: '#606c81',
@@ -45,7 +46,7 @@ export function Canvas(width: number, height: number): Canvas {
     ctx.drawImage(image, sx, sy, w, h, x, y, w, h)
   }
 
-  let camera = { x: 0, y: 0 }
+  let camera = { x: 320 / 2, y: 180 / 2 }
 
   return {
     canvas,
@@ -195,21 +196,85 @@ function load_image(sheet: HTMLImageElement, src: string) {
   })
 }
 
+let fonts = anim(392, 352, 80, 20, ['x_to_start'])
+
+function LoadImages(cc: Canvas, ii: Input) {
+
+
+  function _update(delta: number) {
+    if (images_loaded) {
+      if (ii.btnp('jump')) {
+        pp = Play(cc, ii)
+      }
+    }
+
+    fonts.y_frame = 'x_to_start'
+    update_anim(fonts, delta)
+    ii.update()
+  }
+
+  function _render(_alpha: number) {
+
+    cc.rect(0, 0, 320, 180, Color.Black)
+
+
+    if (images_loaded) {
+      cc.image(intro_image, 0, 0, 0, 0, 320, 180)
+      render_anim(cc, fonts, 0, 100, 100)
+    }
+
+
+  }
+
+  return {
+    _render,
+    _update
+  }
+}
+
+type Scene = {
+  _update: (delta: number) => void,
+  _render: (alpha: number) => void
+}
+
+let pp: Scene
+
+function Scenes(cc: Canvas, ii: Input) {
+
+  pp = LoadImages(cc, ii)
+
+  return {
+    _update(delta: number) {
+      pp._update(delta)
+    },
+    _render(alpha: number) {
+      return pp._render(alpha)
+    }
+  }
+}
+
+let intro_image = new Image()
+
+let images_loaded = false
+
 function app(el: HTMLElement) {
 
   let cc = Canvas(320, 180)
   let ii = Input()
 
-  let pp = Play(cc, ii)
+  let ss = Scenes(cc, ii)
 
   Promise.all([
     load_tileset(),
     load_image(sheet, spritesheet_png),
     load_image(bg_image, bg_png),
-    load_image(city_image, city_png)
-  ])
+    load_image(city_image, city_png),
+    load_image(intro_image, intro_png),
+  ]).then(() => {
+    images_loaded = true
+  })
 
-  Loop(pp._update, pp._render)
+  Loop(ss._update, ss._render)
 
   el.appendChild(cc.canvas)
 }
@@ -631,7 +696,7 @@ function Play(cc: Canvas, ii: Input) {
 
 
       for (let b of bullets) {
-        if (b.life > 500) {
+        if (b.t_launch < 200) {
           continue
         }
         let {c_box: b_box} = bullet_boxes(b)
@@ -648,7 +713,7 @@ function Play(cc: Canvas, ii: Input) {
       update_bullet(bullets, fxs, b, delta, has_collided_player)
 
 
-      if (b.life > 500) {
+      if (b.t_launch < 200) {
         continue
       }
 
@@ -678,7 +743,6 @@ function Play(cc: Canvas, ii: Input) {
 
   function _render(alpha: number) {
     cc.rect(0, 0, 320, 180, Color.Black)
-
 
     render_bg(cc, bg, grid)
 
@@ -825,6 +889,7 @@ function update_fx(fxs: Fxs, fx: Fx, delta: number) {
 
 function update_bullet(bs: Bullets, fxs: Fxs, b: Bullet, delta: number, has_collided_bullet: HasCollidedXYWH) {
 
+  b.t_launch += delta
 
   b.life = appr(b.life, 0, delta)
 
@@ -1012,6 +1077,7 @@ type Bullet = Position & {
   life: number
   type: BulletType
   anim: Anim
+  t_launch: number
 }
 
 type Bullets = Bullet[]
@@ -1021,15 +1087,16 @@ type BulletType = 'e2' | 'hero'
 function bullet(x: number, y: number, facing: number, type: BulletType) {
   let hero_dx= facing * p_max_dx * 2.6
   let e2_dx = facing * p_max_dx * 2
-  let hero_life = 600
-  let e2_life = 800
+  let hero_life = 300 + Math.random() * 400
+  let e2_life = 600 + Math.random() * 400
   return {
     ...position(x, y, 8, 8),
     anim: anim(344, 0, 32, 32, ['idle']),
     facing,
     dx: type === 'hero' ? hero_dx : e2_dx,
     life: type === 'hero' ? hero_life : e2_life,
-    type
+    type,
+    t_launch: 0
   }
 }
 
