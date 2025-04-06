@@ -454,7 +454,7 @@ function fx(x: number, y: number, y_frame: string): Fx {
   let res = {
     ...position(x, y, 16, 16),
     life: 600,
-    anim: anim(344, 0, 32, 32, ['bullet', 'flash', 'hit'])
+    anim: anim(344, 0, 32, 32, ['bullet', 'flash', 'hit', 'won'])
   }
 
   res.anim.y_frame = y_frame
@@ -467,7 +467,7 @@ type Coin = Position & {
   t_pickup: number
 }
 
-function c_boxes(c: Coin) {
+function c_boxes(c: Position) {
   let [c_x, c_y] = pos_xy(c)
   let c_box: XYWH = [
     c_x, c_y, c.w, c.h
@@ -488,6 +488,21 @@ function coin(x: number, y: number): Coin {
 
 type Coins = Coin[]
 
+type Checkpoint = Position & {
+  anim: Anim
+  is_locked: boolean
+  t_enter: number
+}
+
+function checkpoint(x: number, y: number) {
+  return {
+    ...position(x, y - 8, 32, 32),
+    anim: anim(576, 0, 32, 32, ['lock', 'unlock', 'enter'], 2),
+    is_locked: true,
+    t_enter: 0
+  }
+}
+
 function Play(cc: Canvas, ii: Input) {
 
   let bg: BG = {
@@ -495,32 +510,50 @@ function Play(cc: Canvas, ii: Input) {
     city_x: 0
   }
 
+  let e2s: E2[], bullets: Bullets, fxs: Fxs, coins:Coins
+
   let p0 = player(0, 0)
 
-  let e2s: E2[] = []
+  let checkpoints: Checkpoint
+
+  let grid: Grid
+
+  let level = 0
+  function load_level() {
+    level++
+
+    e2s = []
 
 
-  let bullets: Bullets = []
+    bullets = []
 
-  let fxs: Fxs = []
+    fxs = []
 
-  let coins: Coins = []
+    coins = []
 
-  let [grid, entities] = levels()
+    let entities
 
-  for (let entity of entities) {
-    if (entity.src[0] === 136) {
-      p0.i_x = entity.px[0]
-      p0.i_y = entity.px[1]
-    }
-    
-    if (entity.src[0] === 144) {
-      e2s.push(e2(...entity.px))
-    }
-    if (entity.src[0] === 128) {
-      coins.push(coin(...entity.px))
+    [grid, entities] = levels(level)
+
+    for (let entity of entities) {
+      if (entity.src[0] === 136) {
+        p0.i_x = entity.px[0]
+        p0.i_y = entity.px[1]
+      }
+
+      if (entity.src[0] === 144) {
+        e2s.push(e2(...entity.px))
+      }
+      if (entity.src[0] === 128) {
+        coins.push(coin(...entity.px))
+      }
+      if (entity.src[0] === 120) {
+        checkpoints = checkpoint(...entity.px)
+      }
     }
   }
+
+  load_level()
 
   function has_collided_player(x: number, y: number, w: number, h: number) {
     return has_collided_grid(grid, x, y, w, h)
@@ -533,7 +566,17 @@ function Play(cc: Canvas, ii: Input) {
 
     update_bg(grid, bg, cc.camera, delta)
 
+    update_checkpoints(checkpoints, fxs, coins, delta, load_level)
+
     let { p_box } = player_boxes(p0)
+
+    if (!checkpoints.is_locked) {
+      let { c_box } = c_boxes(checkpoints)
+
+      if (box_intersect(c_box, p_box)) {
+        checkpoints.t_enter = 1000
+      }
+    }
 
     for (let c of coins) {
       update_coin(coins, fxs, c, delta)
@@ -625,9 +668,11 @@ function Play(cc: Canvas, ii: Input) {
     cc.rect(0, 0, 320, 180, Color.Black)
 
 
-    render_bg(cc, bg)
+    render_bg(cc, bg, grid)
 
     render_grid(cc, grid)
+
+    render_checkpoints(checkpoints, alpha, cc)
 
     for (let c of coins) {
       render_coin(c, alpha, cc)
@@ -658,6 +703,62 @@ function Play(cc: Canvas, ii: Input) {
   }
 }
 
+function update_checkpoints(checkpoints: Checkpoint, fxs: Fxs, coins: Coins, delta: number, load_level: () => void) {
+
+
+  if (checkpoints.is_locked && coins.length === 0) {
+    checkpoints.is_locked = false
+  }
+
+  if (checkpoints.t_enter > 0) {
+    if (checkpoints.t_enter % 200 < 30) {
+      let [c_x, c_y] = pos_xy(checkpoints)
+      c_x += (Math.random() * 2 - 1) * 64
+      c_y += (Math.random() * 2 - 1) * 64
+      fxs.push(fx(c_x, c_y - 64, 'won'))
+    }
+
+    checkpoints.t_enter = appr(checkpoints.t_enter, 0, delta)
+
+    if (checkpoints.t_enter === 0) {
+      load_level()
+    }
+  }
+
+
+  if (checkpoints.t_enter !== 0) {
+    checkpoints.anim.y_frame = 'enter'
+  } else if (checkpoints.is_locked) {
+    checkpoints.anim.y_frame = 'lock'
+  } else {
+    checkpoints.anim.y_frame = 'unlock'
+  }
+
+  update_anim(checkpoints.anim, delta)
+}
+
+function render_checkpoints(c: Checkpoint, alpha: number, cc: Canvas) {
+  let x, y
+
+  let [c_x, c_y] = pos_xy(c)
+
+  x = c.prev_x ? interpolate(c_x, c.prev_x, alpha) : c_x
+  y = c.prev_y ? interpolate(c_y, c.prev_y, alpha) : c_y
+
+  render_anim(cc, c.anim, c.facing, x - c.anim.w / 2 + c.w / 2, y - c.anim.h / 2 + c.h / 2)
+
+
+    let { 
+      c_box
+    } = c_boxes(c)
+
+    if (false) {
+      render_box(cc, c_box)
+    }
+}
+
+
+
 function update_coin(coins: Coins, fxs: Fxs, c: Coin, delta: number) {
 
   if (c.t_pickup > 0) {
@@ -668,6 +769,10 @@ function update_coin(coins: Coins, fxs: Fxs, c: Coin, delta: number) {
     }
 
     c.anim.y_frame = 'pickup'
+
+    let [c_x, c_y] = pos_xy(c)
+
+    fxs.push(fx(c_x, c_y, 'pickup'))
   }
 
   update_anim(c.anim, delta)
@@ -732,15 +837,17 @@ function update_bg(grid: Grid, bg: BG, camera: Camera, delta: number) {
   bg.city_x = appr(bg.city_x, -(camera.x - 320 / 2) * city_factor, delta)
 }
 
-function render_bg(cc: Canvas, bg: BG) {
+function render_bg(cc: Canvas, bg: BG, grid: Grid) {
   cc.set_transform(bg.clouds_x, 0, 1, 1)
   cc.image(bg_image, 0, 0, 0, 0, bg_image.width, bg_image.height)
   cc.image(bg_image, bg_image.width, 0, 0, 0, bg_image.width, bg_image.height)
+  cc.image(bg_image, bg_image.width * 2, 0, 0, 0, bg_image.width, bg_image.height)
   cc.reset_transform()
 
-  cc.set_transform(bg.city_x, 0, 1, 1)
+  cc.set_transform(bg.city_x, grid.h - 200, 1, 1)
   cc.image(city_image, 0, 0, 0, 0, city_image.width, city_image.height)
   cc.image(city_image, city_image.width, 0, 0, 0, city_image.width, city_image.height)
+  cc.image(city_image, city_image.width * 2, 0, 0, 0, city_image.width, city_image.height)
   cc.reset_transform()
 }
 

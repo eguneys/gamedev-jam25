@@ -84,9 +84,9 @@ export function is_solid_tile(_grid: Grid, tile?: Tile) {
     return true
 }
 
-export function levels() {
+export function levels(nb_level = 1) {
 
-    let l0 = JSON.parse(level0).levels[0]
+    let l0 = JSON.parse(level0).levels[nb_level]
     let res = grid(l0.worldX, l0.worldY, l0.pxWid, l0.pxHei)
 
     let entities = []
