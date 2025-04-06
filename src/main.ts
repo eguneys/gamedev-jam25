@@ -4,6 +4,7 @@ import spritesheet_png from './assets/spritesheet.png'
 import bg_png from './assets/bg.png'
 import city_png from './assets/city.png'
 import intro_png from './assets/intro.png'
+import thanks_png from './assets/thanks.png'
 
 const Color = {
   Black: '#606c81',
@@ -25,6 +26,7 @@ export type Canvas = {
   set_transform(x: number, y: number, sx: number, sy: number): void
   reset_transform(): void
   camera: Camera
+  reset_camera(): void
 }
 
 export function Canvas(width: number, height: number): Canvas {
@@ -63,6 +65,10 @@ export function Canvas(width: number, height: number): Canvas {
     reset_transform() {
       ctx.resetTransform()
     },
+    reset_camera() {
+      camera.x = 320 / 2
+      camera.y = 180 / 2
+    }
   }
 }
 
@@ -196,9 +202,42 @@ function load_image(sheet: HTMLImageElement, src: string) {
   })
 }
 
+
+function Endgame(cc: Canvas, ii: Input) {
+  let life = 0
+  cc.reset_camera()
+
+  function _update(delta: number) {
+    life += delta
+    if (life > 5000) {
+      if (ii.btnp('jump')) {
+        pp = Intro(cc, ii)
+      }
+    }
+
+    update_anim(fonts, delta)
+    ii.update()
+  }
+
+  function _render(_alpha: number) {
+
+    cc.rect(0, 0, 320, 180, Color.Black)
+
+
+    cc.image(thanks_image, 0, 0, 0, 0, 320, 180)
+
+  }
+
+  return {
+    _render,
+    _update
+  }
+}
+
+
 let fonts = anim(392, 352, 80, 20, ['x_to_start'])
 
-function LoadImages(cc: Canvas, ii: Input) {
+function Intro(cc: Canvas, ii: Input) {
 
 
   function _update(delta: number) {
@@ -241,7 +280,7 @@ let pp: Scene
 
 function Scenes(cc: Canvas, ii: Input) {
 
-  pp = LoadImages(cc, ii)
+  pp = Intro(cc, ii)
 
   return {
     _update(delta: number) {
@@ -254,6 +293,7 @@ function Scenes(cc: Canvas, ii: Input) {
 }
 
 let intro_image = new Image()
+let thanks_image = new Image()
 
 let images_loaded = false
 
@@ -270,6 +310,7 @@ function app(el: HTMLElement) {
     load_image(bg_image, bg_png),
     load_image(city_image, city_png),
     load_image(intro_image, intro_png),
+    load_image(thanks_image, thanks_png),
   ]).then(() => {
     images_loaded = true
   })
@@ -630,6 +671,7 @@ function Play(cc: Canvas, ii: Input) {
 
   function goto_end() {
 
+    pp = Endgame(cc, ii)
   }
 
   function has_collided_player(x: number, y: number, w: number, h: number) {
