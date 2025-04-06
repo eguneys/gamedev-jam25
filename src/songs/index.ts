@@ -1,0 +1,6 @@
+export { default as song1 } from './initial_song'
+export { default as song2 } from './hidden_song'
+export { default as bullet } from './bullet'
+export { default as damage } from './damage'
+export { default as jump } from './jump'
+export { default as knock } from './knock'

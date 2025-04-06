@@ -5,6 +5,7 @@ import bg_png from './assets/bg.png'
 import city_png from './assets/city.png'
 import intro_png from './assets/intro.png'
 import thanks_png from './assets/thanks.png'
+import a from './sound'
 
 const Color = {
   Black: '#606c81',
@@ -211,7 +212,7 @@ function Endgame(cc: Canvas, ii: Input) {
     life += delta
     if (life > 5000) {
       if (ii.btnp('jump')) {
-        pp = Intro(cc, ii)
+        _next_pp = Intro(cc, ii)
       }
     }
 
@@ -228,9 +229,14 @@ function Endgame(cc: Canvas, ii: Input) {
 
   }
 
+  function _cleanup() {
+
+  }
+
   return {
     _render,
-    _update
+    _update,
+    _cleanup
   }
 }
 
@@ -239,11 +245,14 @@ let fonts = anim(392, 352, 80, 20, ['x_to_start'])
 
 function Intro(cc: Canvas, ii: Input) {
 
+  function _cleanup() {
+
+  }
 
   function _update(delta: number) {
     if (images_loaded) {
       if (ii.btnp('jump')) {
-        pp = Play(cc, ii)
+        _next_pp = Play(cc, ii)
       }
     }
 
@@ -267,23 +276,33 @@ function Intro(cc: Canvas, ii: Input) {
 
   return {
     _render,
-    _update
+    _update,
+    _cleanup
   }
 }
 
 type Scene = {
   _update: (delta: number) => void,
   _render: (alpha: number) => void
+  _cleanup: () => void
 }
 
 let pp: Scene
+let _next_pp: Scene
 
 function Scenes(cc: Canvas, ii: Input) {
 
   pp = Intro(cc, ii)
+  _next_pp = pp
 
   return {
     _update(delta: number) {
+
+      if (_next_pp !== pp) {
+        pp._cleanup()
+        pp = _next_pp
+      }
+
       pp._update(delta)
     },
     _render(alpha: number) {
@@ -311,6 +330,7 @@ function app(el: HTMLElement) {
     load_image(city_image, city_png),
     load_image(intro_image, intro_png),
     load_image(thanks_image, thanks_png),
+    a.generate()
   ]).then(() => {
     images_loaded = true
   })
@@ -611,6 +631,12 @@ function checkpoint(x: number, y: number) {
 
 function Play(cc: Canvas, ii: Input) {
 
+  let song = a.play('song1', true)
+
+  function _cleanup() {
+    song?.()
+  }
+
   let bg: BG = {
     clouds_x: 0,
     city_x: 0
@@ -671,7 +697,7 @@ function Play(cc: Canvas, ii: Input) {
 
   function goto_end() {
 
-    pp = Endgame(cc, ii)
+    _next_pp = Endgame(cc, ii)
   }
 
   function has_collided_player(x: number, y: number, w: number, h: number) {
@@ -817,7 +843,8 @@ function Play(cc: Canvas, ii: Input) {
 
   return {
     _update,
-    _render
+    _render,
+    _cleanup
   }
 }
 
@@ -940,6 +967,7 @@ function update_bullet(bs: Bullets, fxs: Fxs, b: Bullet, delta: number, has_coll
 
     let [b_x, b_y] = pos_xy(b)
     fxs.push(fx(b_x, b_y, 'hit'))
+    a.play('damage')
   }
 
   pixel_perfect_position_update(b, delta, has_collided_bullet)
@@ -1049,7 +1077,7 @@ function update_e2(bullets: Bullets, fxs: Fxs, e2: E2, delta: number, has_collid
       e2.dx = e2.knock_bullet.dx
       e2.ddx = 0
       e2.dy = -100
-
+      a.play('knock')
     } else {
       e2.t_knock = appr(e2.t_knock, 0, delta)
       if (e2.t_knock === 0) {
@@ -1060,6 +1088,7 @@ function update_e2(bullets: Bullets, fxs: Fxs, e2: E2, delta: number, has_collid
   }
 
   if (e2.t_life === 0) {
+    a.play('knock')
     e2.t_sleep = 6000
     e2.t_life = 2
   }
@@ -1194,6 +1223,7 @@ function update_player(ii: Input, player: Player, bullets: Bullets, fxs: Fxs, de
         let [p_x, p_y] = pos_xy(player)
         bullets.push(bullet(p_x, p_y, player.facing, 'hero'))
         fxs.push(fx(p_x, p_y, 'alert'))
+        a.play('bullet')
       }
     }
 
@@ -1223,6 +1253,7 @@ function update_player(ii: Input, player: Player, bullets: Bullets, fxs: Fxs, de
           player.jboost = max_jump_boost
           player.j_pp = true
           player.dy = -player.jboost / max_jump_boost * 320
+          a.play('jump')
         }
       }
     }
@@ -1344,6 +1375,7 @@ function update_player(ii: Input, player: Player, bullets: Bullets, fxs: Fxs, de
 
         fxs.push(fx(p_x, p_y, 'hit'))
         fxs.push(fx(p_x, p_y - 16, 'hit'))
+        a.play('damage')
       }
     }
 
