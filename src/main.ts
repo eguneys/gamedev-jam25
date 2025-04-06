@@ -90,7 +90,7 @@ function Loop(update: (dt: number) => void, render: (alpha: number) => void) {
   requestAnimationFrame(step)
 }
 
-type Action = 'left' | 'right' | 'jump'
+type Action = 'left' | 'right' | 'jump' | 'shoot'
 
 type PressState = 'just' | boolean
 
@@ -102,7 +102,7 @@ type Input = {
 
 function Input() {
 
-  let downs: Record<Action, PressState> = { left: false, right: false, jump: false }
+  let downs: Record<Action, PressState> = { shoot: false, left: false, right: false, jump: false }
 
   function on_down(action: Action) {
     downs[action] = 'just'
@@ -142,6 +142,11 @@ function Input() {
       case 'i':
         on_down('jump')
         break
+      case 'c':
+      case 'j':
+      case ' ': 
+        on_down('shoot')
+        break
       default:
         return
     }
@@ -160,6 +165,11 @@ function Input() {
       case 'x':
       case 'i':
         on_up('jump')
+        break
+      case 'c':
+      case 'j':
+      case ' ':
+        on_up('shoot')
         break
       default:
         return
@@ -270,12 +280,15 @@ type Player = Position & {
   t_ledge: number
   t_knoll: number
 
-  knock_box?: E2
+  knock_box?: E2 | Bullet
   t_knock: number
   t_knock_cool: number
   flash_skip: boolean
 
   anim: Anim
+
+
+  t_shoot: number
 }
 
 
@@ -292,7 +305,8 @@ function player(x: number, y: number): Player {
     t_knoll: 0,
     t_knock: 0,
     t_knock_cool: 0,
-    flash_skip: false
+    flash_skip: false,
+    t_shoot: 0
   }
 }
 
@@ -336,7 +350,7 @@ function player_boxes(player: Player) {
   }
 }
 
-function e1_boxes(c: E1) {
+function e1_boxes(c: E2) {
   let [c_x, c_y] = pos_xy(c)
 
   let c_box: XYWH = [
@@ -383,29 +397,28 @@ type HasCollidedXYWH = (x: number, y: number, w: number, h: number) => boolean |
 
 type Camera = { x: number, y: number }
 
-type E1 = Position & {
-  anim: Anim
-
-}
-
 type E2 = Position & {
   anim: Anim
 
-}
-
-function e1(x: number, y: number): E1 {
-  return {
-    ...position(x, y - 32, 32, 32),
-    anim: anim(0, 0, 32, 32)
-  }
+  t_walk: number
+  t_idle: number
+  t_alert: number
+  t_knock: number
+  knock_bullet?: Bullet
 }
 
 function e2(x: number, y: number): E2 {
   return {
     ...position(x, y - 24, 32, 32),
-    anim: anim(0, 0, 32, 32)
+    anim: anim(128, 0, 64, 64, ['idle', 'run', 'alert', 'knock']),
+    t_walk: 0,
+    t_idle: 0,
+    facing: 1,
+    t_alert: 0,
+    t_knock: 0
   }
 }
+
 function anim(x: number, y: number, w: number, h: number, y_frames = ['idle'], nb_frames = 3): Anim {
   return {
     x, y,
@@ -424,6 +437,26 @@ type BG = {
   city_x: number
 }
 
+type Fx = Position & {
+  life: number
+  anim: Anim
+}
+
+type Fxs = Fx[]
+
+
+function fx(x: number, y: number, y_frame: string): Fx {
+
+  let res = {
+    ...position(x, y, 16, 16),
+    life: 600,
+    anim: anim(344, 0, 32, 32, ['bullet', 'flash', 'hit'])
+  }
+
+  res.anim.y_frame = y_frame
+  return res
+}
+
 function Play(cc: Canvas, ii: Input) {
 
   let bg: BG = {
@@ -433,8 +466,12 @@ function Play(cc: Canvas, ii: Input) {
 
   let p0 = player(0, 0)
 
-  let e1s: E1[] = []
   let e2s: E2[] = []
+
+
+  let bullets: Bullets = []
+
+  let fxs: Fxs = []
 
   let [grid, entities] = levels()
 
@@ -443,9 +480,7 @@ function Play(cc: Canvas, ii: Input) {
       p0.i_x = entity.px[0]
       p0.i_y = entity.px[1]
     }
-    if (entity.src[0] === 152) {
-      e1s.push(e1(...entity.px))
-    }
+    
     if (entity.src[0] === 144) {
       e2s.push(e2(...entity.px))
     }
@@ -464,23 +499,71 @@ function Play(cc: Canvas, ii: Input) {
 
     let { p_box } = player_boxes(p0)
 
-    for (let e1 of e1s) {
-      update_e1(e1, delta, has_collided_e1)
-
-    }
     for (let e2 of e2s) {
-      update_e2(e2, delta, has_collided_e1)
+      update_e2(bullets, fxs, e2, delta, has_collided_e1)
 
-      let { c_box } = e1_boxes(e2)
+      let { 
+        c_box, 
+        eye_left_box, 
+        eye_right_box 
+      } = e1_boxes(e2)
 
       if (p0.knock_box === undefined) {
         if (box_intersect(c_box, p_box)) {
           p0.knock_box = e2
         }
       }
+
+      if (e2.t_alert === 0) {
+        if (box_intersect(eye_left_box, p_box)) {
+          e2.t_alert = -1200
+        }
+
+        if (box_intersect(eye_right_box, p_box)) {
+          e2.t_alert = 1200
+        }
+      }
+
+
+      for (let b of bullets) {
+        if (b.life > 500) {
+          continue
+        }
+        let {c_box: b_box} = bullet_boxes(b)
+
+        if (box_intersect(c_box, b_box)) {
+          e2.knock_bullet = b
+          b.life = 0
+        }
+      }
     }
 
-    update_player(ii, p0, delta, has_collided_player)
+
+    for (let b of bullets.slice(0)) {
+      update_bullet(bullets, fxs, b, delta, has_collided_player)
+
+
+      if (b.life > 500) {
+        continue
+      }
+
+      let { c_box: b_box } = bullet_boxes(b)
+
+      if (p0.knock_box === undefined) {
+        if (box_intersect(b_box, p_box)) {
+          p0.knock_box = b
+          b.life = 0
+        }
+      }
+    }
+
+    for (let fx of fxs.slice(0)) {
+      update_fx(fxs, fx, delta)
+    }
+
+
+
+    update_player(ii, p0, bullets, fxs, delta, has_collided_player)
 
     update_camera(grid, cc.camera, p0, delta)
 
@@ -496,15 +579,19 @@ function Play(cc: Canvas, ii: Input) {
 
     render_grid(cc, grid)
 
-    for (let e1 of e1s) {
-      render_e1(e1, alpha, cc)
-    }
-
     for (let e2 of e2s) {
       render_e2(e2, alpha, cc)
     }
 
     render_player(p0, alpha, cc)
+
+    for (let b of bullets) {
+      render_bullet(b, alpha, cc)
+    }
+
+    for (let fx of fxs) {
+      render_fx(fx, alpha, cc)
+    }
   }
 
 
@@ -513,6 +600,35 @@ function Play(cc: Canvas, ii: Input) {
     _update,
     _render
   }
+}
+
+function update_fx(fxs: Fxs, fx: Fx, delta: number) {
+
+  fx.life = appr(fx.life, 0, delta)
+
+  if (fx.life === 0) {
+    fxs.splice(fxs.indexOf(fx), 1)
+
+  }
+
+  update_anim(fx.anim, delta)
+}
+
+function update_bullet(bs: Bullets, fxs: Fxs, b: Bullet, delta: number, has_collided_bullet: HasCollidedXYWH) {
+
+
+  b.life = appr(b.life, 0, delta)
+
+  if (b.hit_x !== undefined || b.life === 0) {
+    bs.splice(bs.indexOf(b), 1)
+
+    let [b_x, b_y] = pos_xy(b)
+    fxs.push(fx(b_x, b_y, 'hit'))
+  }
+
+  pixel_perfect_position_update(b, delta, has_collided_bullet)
+
+  update_anim(b.anim, delta)
 }
 
 function update_bg(grid: Grid, bg: BG, camera: Camera, delta: number) {
@@ -584,17 +700,140 @@ function update_anim(anim: Anim, delta: number) {
   }
 }
 
-function update_e2(e2: E2, delta: number, _has_collided_e2: HasCollidedXYWH) {
+function update_e2(bullets: Bullets, fxs: Fxs, e2: E2, delta: number, has_collided_e2: HasCollidedXYWH) {
   update_anim(e2.anim, delta)
+
+  e2.t_walk = appr(e2.t_walk, 0, delta)
+  e2.t_idle = appr(e2.t_idle, 0, delta)
+
+  if (e2.t_knock > 0) {
+
+  } else {
+    if (e2.t_idle === 0) {
+      if (e2.t_walk === 0) {
+        if (Math.random() < 0.7) {
+          e2.t_idle = 1000
+          e2.ddx = 0
+          e2.dx = 0
+        } else {
+          e2.facing = e2.facing * -1
+          e2.t_walk = 2000
+          e2.ddx = 100
+        }
+      }
+    }
+  }
+
+
+  if (e2.knock_bullet !== undefined) {
+    if (e2.t_knock === 0) {
+      e2.t_knock = 600
+      e2.dx = e2.knock_bullet.dx
+      e2.ddx = 0
+      e2.dy = -100
+
+    } else {
+      e2.t_knock = appr(e2.t_knock, 0, delta)
+      if (e2.t_knock === 0) {
+        e2.knock_bullet = undefined
+      }
+    }
+  }
+
+  if (e2.t_knock === 0 && e2.t_alert !== 0) {
+    let dir = Math.sign(e2.t_alert)
+
+    e2.t_alert = appr(e2.t_alert, 0, delta)
+    e2.t_walk = 0
+    e2.dx = 0
+    e2.facing = dir
+
+    if (e2.t_alert === 0) {
+      let [e2_x, e2_y] = pos_xy(e2)
+      e2_x += 16
+      e2_y += 8
+      if (dir === -1) {
+
+        e2_x -= 16
+      }
+      bullets.push(bullet(e2_x, e2_y, dir, 'e2'))
+      fxs.push(fx(e2_x, e2_y, 'flash'))
+    }
+  }
+
+  if (e2.t_walk > 0) {
+    e2.dx = appr(e2.dx, p_max_dx * 0.5 * e2.facing, delta * e2.ddx)
+  } else {
+    e2.dx = appr(e2.dx, 0, delta * e2.ddx)
+  }
+  e2.ddx = appr(e2.ddx, 1, delta)
+
+
+  e2.ddy = 0.5
+  e2.dy_pull = appr(e2.dy_pull, 300, delta * 100)
+  e2.dy = appr(e2.dy, e2.dy_pull, delta * e2.ddy)
+
+  pixel_perfect_position_update(e2, delta, has_collided_e2)
+
+  if (e2.t_knock !== 0) {
+
+    e2.anim.y_frame = 'knock'
+  } else if (e2.t_alert !== 0) {
+    e2.anim.y_frame = 'alert'
+  } else if (e2.t_walk > 0) {
+    e2.anim.y_frame = 'run'
+  } else {
+    e2.anim.y_frame = 'idle'
+  }
 }
 
+type Bullet = Position & {
+  life: number
+  type: BulletType
+  anim: Anim
+}
 
-function update_e1(e1: E1, delta: number, _has_collided_e1: HasCollidedXYWH) {
-  update_anim(e1.anim, delta)
+type Bullets = Bullet[]
+
+type BulletType = 'e2' | 'hero'
+
+function bullet(x: number, y: number, facing: number, type: BulletType) {
+  let hero_dx= facing * p_max_dx * 2.6
+  let e2_dx = facing * p_max_dx * 2
+  let hero_life = 600
+  let e2_life = 800
+  return {
+    ...position(x, y, 8, 8),
+    anim: anim(344, 0, 32, 32, ['idle']),
+    facing,
+    dx: type === 'hero' ? hero_dx : e2_dx,
+    life: type === 'hero' ? hero_life : e2_life,
+    type
+  }
+}
+
+function bullet_boxes(b: Bullet) {
+
+  let [x, y] = pos_xy(b)
+
+  let c_box: XYWH = [
+    x, y, b.w, b.h
+  ]
+
+  return {
+    c_box
+  }
 }
 
 const ledge_cooldown = 380
-function update_player(ii: Input, player: Player, delta: number, has_collided_player: HasCollidedXYWH) {
+function update_player(ii: Input, player: Player, bullets: Bullets, fxs: Fxs, delta: number, has_collided_player: HasCollidedXYWH) {
+
+  let ishoot = false
+  if (ii.btn('shoot')) {
+    ishoot = true
+  }
+
+
     if (ii.btn('jump')) {
       if (player.j_pp === undefined) {
         player.j_pp = false
@@ -615,6 +854,19 @@ function update_player(ii: Input, player: Player, delta: number, has_collided_pl
     } else {
       player.ix = 0
     }
+
+
+  player.t_shoot = appr(player.t_shoot, 0, delta)
+    if (ishoot) {
+      if (player.t_shoot === 0) {
+        player.t_shoot = 200
+
+        let [p_x, p_y] = pos_xy(player)
+        bullets.push(bullet(p_x, p_y, player.facing, 'hero'))
+        fxs.push(fx(p_x, p_y, 'alert'))
+      }
+    }
+
 
     if (player.t_knock > 0) {
       player.ix = 0
@@ -751,8 +1003,17 @@ function update_player(ii: Input, player: Player, delta: number, has_collided_pl
         let a_x = Math.max(11, Math.min(Math.abs(d_x), 16))
         let a_y = Math.max(16, Math.min(Math.abs(d_y), 26))
 
+        if (player.knock_box.dx > 0) {
+          s_x = Math.sign(player.knock_box.dx)
+          a_x += Math.sign(player.knock_box.dx) * 10
+        }
+
         player.dx = s_x * a_x * 18
         player.dy = a_y * -22
+
+
+        fxs.push(fx(p_x, p_y, 'hit'))
+        fxs.push(fx(p_x, p_y - 16, 'hit'))
       }
     }
 
@@ -789,7 +1050,33 @@ function update_player(ii: Input, player: Player, delta: number, has_collided_pl
     update_anim(player.anim, delta)
 }
 
-function render_e1(_e1: E1, _alpha: number, _cc: Canvas) {
+function render_fx(fx: Fx, alpha: number, cc: Canvas) {
+  let x, y
+
+  let [fx_x, fx_y] = pos_xy(fx)
+
+  x = fx.prev_x ? interpolate(fx_x, fx.prev_x, alpha) : fx_x
+  y = fx.prev_y ? interpolate(fx_y, fx.prev_y, alpha) : fx_y
+
+  render_anim(cc, fx.anim, fx.facing, x - fx.anim.w / 2 + fx.w / 2, y - fx.anim.h / 2 + fx.h / 2)
+}
+
+function render_bullet(b: Bullet, alpha: number, cc: Canvas) {
+  let x, y
+
+  let [b_x, b_y] = pos_xy(b)
+
+  x = b.prev_x ? interpolate(b_x, b.prev_x, alpha) : b_x
+  y = b.prev_y ? interpolate(b_y, b.prev_y, alpha) : b_y
+
+  render_anim(cc, b.anim, b.facing, x - b.anim.w / 2 + b.w / 2, y - b.anim.h / 2 + b.h / 2)
+
+  let { c_box } = bullet_boxes(b)
+
+  if (false) {
+    render_box(cc, c_box)
+  }
+
 }
 
 function render_e2(e2: E2, alpha: number, cc: Canvas) {
@@ -800,7 +1087,7 @@ function render_e2(e2: E2, alpha: number, cc: Canvas) {
   x = e2.prev_x ? interpolate(e2_x, e2.prev_x, alpha) : e2_x
   y = e2.prev_y ? interpolate(e2_y, e2.prev_y, alpha) : e2_y
 
-  render_anim(cc, e2.anim, e2.facing, x, y)
+  render_anim(cc, e2.anim, e2.facing, x - e2.w / 2, y - e2.h)
 
 
     let { 
