@@ -1,5 +1,5 @@
 import CPlayer from './audio-player'
-import { knock, jump, damage, bullet, song2, song1 } from './songs'
+import { pickup, knock, jump, damage, bullet, song2, song1 } from './songs'
 export type SoundPlay = {
   generate: () => Promise<void>,
   play: (name: string, loop?: boolean) => (() => void) | undefined
@@ -33,6 +33,9 @@ function sound_play(): SoundPlay {
         { name: 'jump0', data: jump[0] },
         { name: 'jump1', data: jump[1] },
         { name: 'jump2', data: jump[2] },
+        { name: 'pickup0', data: pickup[0] },
+        { name: 'pickup1', data: pickup[1] },
+        { name: 'pickup2', data: pickup[2] },
         { name: 'knock', data: knock[0] },
     ];
 

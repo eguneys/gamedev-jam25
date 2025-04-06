@@ -106,8 +106,6 @@ export function levels(nb_level = 1) {
 }
 
 export function render_grid(cc: Canvas, grid: Grid) {
-    let g_x = grid.x
-    let g_y = grid.y
 
     for (let tix = 0; tix < grid.tw; tix++) {
         for (let tiy = 0; tiy < grid.th; tiy++) {

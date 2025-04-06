@@ -5,6 +5,7 @@ import bg_png from './assets/bg.png'
 import city_png from './assets/city.png'
 import intro_png from './assets/intro.png'
 import thanks_png from './assets/thanks.png'
+import delight_png from './assets/delight.png'
 import a from './sound'
 
 const Color = {
@@ -195,6 +196,7 @@ function Input() {
 let sheet = new Image()
 let bg_image = new Image()
 let city_image = new Image()
+let delight_image = new Image()
 
 function load_image(sheet: HTMLImageElement, src: string) {
   return new Promise(resolve => {
@@ -330,6 +332,7 @@ function app(el: HTMLElement) {
     load_image(city_image, city_png),
     load_image(intro_image, intro_png),
     load_image(thanks_image, thanks_png),
+    load_image(delight_image, delight_png),
     a.generate()
   ]).then(() => {
     images_loaded = true
@@ -654,6 +657,12 @@ function Play(cc: Canvas, ii: Input) {
   function load_level() {
     level++
 
+    if (level > 2) {
+      song?.()
+
+      song = a.play('song2', true)
+    }
+
     e2s = []
 
 
@@ -730,7 +739,7 @@ function Play(cc: Canvas, ii: Input) {
 
       if (c.t_pickup === 0) {
         if (box_intersect(c_box, p_box)) {
-          c.t_pickup = 300
+          c.t_pickup = 300 + Math.random()  * 200
         }
     }
     }
@@ -911,6 +920,7 @@ function update_coin(coins: Coins, fxs: Fxs, c: Coin, delta: number) {
 
     if (c.t_pickup === 0) {
       coins.splice(coins.indexOf(c), 1)
+      a.play('pickup')
     }
 
     c.anim.y_frame = 'pickup'
@@ -996,6 +1006,15 @@ function render_bg(cc: Canvas, bg: BG, grid: Grid) {
   cc.image(city_image, city_image.width, 0, 0, 0, city_image.width, city_image.height)
   cc.image(city_image, city_image.width * 2, 0, 0, 0, city_image.width, city_image.height)
   cc.reset_transform()
+
+
+  if (grid.h > 300) {
+    cc.set_transform(bg.city_x, grid.h / 2 - 180, 1, 1)
+    cc.image(delight_image, 0, 0, 0, 0, delight_image.width, delight_image.height)
+    cc.image(delight_image, delight_image.width, 0, 0, 0, delight_image.width, delight_image.height)
+    cc.image(delight_image, delight_image.width * 2, 0, 0, 0, delight_image.width, delight_image.height)
+    cc.reset_transform()
+  }
 }
 
 function update_camera(grid: Grid, camera: Camera, player: Player, delta: number) {
