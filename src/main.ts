@@ -405,17 +405,21 @@ type E2 = Position & {
   t_alert: number
   t_knock: number
   knock_bullet?: Bullet
+  t_life: number
+  t_sleep: number
 }
 
 function e2(x: number, y: number): E2 {
   return {
     ...position(x, y - 24, 32, 32),
-    anim: anim(128, 0, 64, 64, ['idle', 'run', 'alert', 'knock']),
+    anim: anim(128, 0, 64, 64, ['idle', 'run', 'alert', 'knock', 'sleep']),
     t_walk: 0,
     t_idle: 0,
     facing: 1,
     t_alert: 0,
-    t_knock: 0
+    t_knock: 0,
+    t_life: 2,
+    t_sleep: 0
   }
 }
 
@@ -457,6 +461,33 @@ function fx(x: number, y: number, y_frame: string): Fx {
   return res
 }
 
+
+type Coin = Position & {
+  anim: Anim
+  t_pickup: number
+}
+
+function c_boxes(c: Coin) {
+  let [c_x, c_y] = pos_xy(c)
+  let c_box: XYWH = [
+    c_x, c_y, c.w, c.h
+  ]
+
+  return {
+    c_box,
+  }
+}
+
+function coin(x: number, y: number): Coin {
+  return {
+    ...position(x, y - 32, 32, 32),
+    anim: anim(456, 0, 32, 32, ['idle', 'pickup']),
+    t_pickup: 0
+  }
+}
+
+type Coins = Coin[]
+
 function Play(cc: Canvas, ii: Input) {
 
   let bg: BG = {
@@ -473,6 +504,8 @@ function Play(cc: Canvas, ii: Input) {
 
   let fxs: Fxs = []
 
+  let coins: Coins = []
+
   let [grid, entities] = levels()
 
   for (let entity of entities) {
@@ -483,6 +516,9 @@ function Play(cc: Canvas, ii: Input) {
     
     if (entity.src[0] === 144) {
       e2s.push(e2(...entity.px))
+    }
+    if (entity.src[0] === 128) {
+      coins.push(coin(...entity.px))
     }
   }
 
@@ -499,6 +535,18 @@ function Play(cc: Canvas, ii: Input) {
 
     let { p_box } = player_boxes(p0)
 
+    for (let c of coins) {
+      update_coin(coins, fxs, c, delta)
+
+      let { c_box } = c_boxes(c)
+
+      if (c.t_pickup === 0) {
+        if (box_intersect(c_box, p_box)) {
+          c.t_pickup = 300
+        }
+    }
+    }
+
     for (let e2 of e2s) {
       update_e2(bullets, fxs, e2, delta, has_collided_e1)
 
@@ -508,9 +556,11 @@ function Play(cc: Canvas, ii: Input) {
         eye_right_box 
       } = e1_boxes(e2)
 
-      if (p0.knock_box === undefined) {
-        if (box_intersect(c_box, p_box)) {
-          p0.knock_box = e2
+      if (e2.t_sleep === 0) {
+        if (p0.knock_box === undefined) {
+          if (box_intersect(c_box, p_box)) {
+            p0.knock_box = e2
+          }
         }
       }
 
@@ -579,6 +629,12 @@ function Play(cc: Canvas, ii: Input) {
 
     render_grid(cc, grid)
 
+    for (let c of coins) {
+      render_coin(c, alpha, cc)
+    }
+
+
+
     for (let e2 of e2s) {
       render_e2(e2, alpha, cc)
     }
@@ -600,6 +656,42 @@ function Play(cc: Canvas, ii: Input) {
     _update,
     _render
   }
+}
+
+function update_coin(coins: Coins, fxs: Fxs, c: Coin, delta: number) {
+
+  if (c.t_pickup > 0) {
+    c.t_pickup = appr(c.t_pickup, 0, delta)
+
+    if (c.t_pickup === 0) {
+      coins.splice(coins.indexOf(c), 1)
+    }
+
+    c.anim.y_frame = 'pickup'
+  }
+
+  update_anim(c.anim, delta)
+}
+
+
+function render_coin(c: Coin, alpha: number, cc: Canvas) {
+  let x, y
+
+  let [c_x, c_y] = pos_xy(c)
+
+  x = c.prev_x ? interpolate(c_x, c.prev_x, alpha) : c_x
+  y = c.prev_y ? interpolate(c_y, c.prev_y, alpha) : c_y
+
+  render_anim(cc, c.anim, c.facing, x - c.anim.w / 2 + c.w / 2, y - c.anim.h / 2 + c.h / 2)
+
+
+    let { 
+      c_box
+    } = c_boxes(c)
+
+    if (false) {
+      render_box(cc, c_box)
+    }
 }
 
 function update_fx(fxs: Fxs, fx: Fx, delta: number) {
@@ -706,7 +798,7 @@ function update_e2(bullets: Bullets, fxs: Fxs, e2: E2, delta: number, has_collid
   e2.t_walk = appr(e2.t_walk, 0, delta)
   e2.t_idle = appr(e2.t_idle, 0, delta)
 
-  if (e2.t_knock > 0) {
+  if (e2.t_knock > 0 || e2.t_sleep > 0) {
 
   } else {
     if (e2.t_idle === 0) {
@@ -736,11 +828,19 @@ function update_e2(bullets: Bullets, fxs: Fxs, e2: E2, delta: number, has_collid
       e2.t_knock = appr(e2.t_knock, 0, delta)
       if (e2.t_knock === 0) {
         e2.knock_bullet = undefined
+        e2.t_life -= 1
       }
     }
   }
 
-  if (e2.t_knock === 0 && e2.t_alert !== 0) {
+  if (e2.t_life === 0) {
+    e2.t_sleep = 6000
+    e2.t_life = 2
+  }
+
+  e2.t_sleep = appr(e2.t_sleep, 0, delta)
+
+  if (e2.t_sleep === 0 && e2.t_knock === 0 && e2.t_alert !== 0) {
     let dir = Math.sign(e2.t_alert)
 
     e2.t_alert = appr(e2.t_alert, 0, delta)
@@ -775,7 +875,9 @@ function update_e2(bullets: Bullets, fxs: Fxs, e2: E2, delta: number, has_collid
 
   pixel_perfect_position_update(e2, delta, has_collided_e2)
 
-  if (e2.t_knock !== 0) {
+  if (e2.t_sleep !== 0) {
+    e2.anim.y_frame = 'sleep'
+  } else if (e2.t_knock !== 0) {
 
     e2.anim.y_frame = 'knock'
   } else if (e2.t_alert !== 0) {
