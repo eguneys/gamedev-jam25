@@ -160,6 +160,8 @@ function Input() {
         return
     }
     e.preventDefault()
+    e.stopImmediatePropagation()
+    e.stopPropagation()
   })
   document.addEventListener('keyup', (e) => {
     switch (e.key) {
@@ -184,6 +186,9 @@ function Input() {
         return
     }
     e.preventDefault()
+
+    e.stopImmediatePropagation()
+    e.stopPropagation()
   })
 
   return {
